@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Learning Issue Analyzer</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1000px;
+      margin: 40px auto;
+      padding: 0 20px;
+      line-height: 1.5;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      padding: 12px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 10px 18px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .result-section {
+      margin-top: 32px;
+    }
+
+    .main-goal-card {
+      border: 1px solid #ddd;
+      padding: 16px;
+      margin-bottom: 24px;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+
+    .issue-card {
+      border: 1px solid #ddd;
+      padding: 16px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+    }
+
+    .issue-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .issue-title {
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .tag-row {
+      margin: 8px 0;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 4px 8px;
+      margin-right: 8px;
+      border: 1px solid #ccc;
+      border-radius: 999px;
+      font-size: 13px;
+      background: #f7f7f7;
+    }
+
+    .field {
+      margin-top: 10px;
+    }
+
+    .field-label {
+      font-weight: bold;
+    }
+
+    .empty {
+      color: #777;
+      font-style: italic;
+    }
+
+    .error {
+      color: darkred;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Learning Issue Analyzer</h1>
+
+  <p>
+    Paste an AI-assisted learning conversation below. The system will extract the main goal and related learning issues.
+  </p>
+
+  <textarea
+    id="conversation"
+    placeholder="Paste your ChatGPT / Claude / Gemini learning conversation here..."
+  ></textarea>
+
+  <br />
+
+  <button onclick="analyze()">Analyze</button>
+
+  <div id="result" class="result-section"></div>
+
+  <script>
+    async function analyze() {
+      const resultBox = document.getElementById("result");
+      const text = document.getElementById("conversation").value.trim();
+
+      if (!text) {
+        resultBox.innerHTML = "<p class='error'>Please paste a conversation first.</p>";
+        return;
+      }
+
+      resultBox.innerHTML = "<p>Analyzing...</p>";
+
+      try {
+        const response = await fetch("http://127.0.0.1:8000/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            conversation_text: text
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("Backend returned status: " + response.status);
+        }
+
+        const data = await response.json();
+        renderResult(data);
+
+      } catch (error) {
+        resultBox.innerHTML = "";
+        const errorBox = document.createElement("pre");
+        errorBox.className = "error";
+        errorBox.textContent = "Error: " + error.message;
+        resultBox.appendChild(errorBox);
+        console.error(error);
+      }
+    }
+
+    function renderResult(data) {
+      const resultBox = document.getElementById("result");
+      resultBox.innerHTML = "";
+
+      renderMainGoal(resultBox, data.main_goal);
+
+      if (!data.issues || !Array.isArray(data.issues) || data.issues.length === 0) {
+        const emptyMessage = document.createElement("p");
+        emptyMessage.className = "empty";
+        emptyMessage.textContent = "No issues found.";
+        resultBox.appendChild(emptyMessage);
+        return;
+      }
+
+      const issuesTitle = document.createElement("h2");
+      issuesTitle.textContent = "Issues";
+      resultBox.appendChild(issuesTitle);
+
+      data.issues.forEach((issue, index) => {
+        const issueCard = createIssueCard(issue, index);
+        resultBox.appendChild(issueCard);
+      });
+    }
+
+    function renderMainGoal(parent, mainGoal) {
+      const title = document.createElement("h2");
+      title.textContent = "Main Goal";
+      parent.appendChild(title);
+
+      const card = document.createElement("div");
+      card.className = "main-goal-card";
+
+      const text = document.createElement("p");
+      text.textContent = mainGoal || "No main goal detected.";
+
+      card.appendChild(text);
+      parent.appendChild(card);
+    }
+
+    function createIssueCard(issue, index) {
+      const card = document.createElement("div");
+      card.className = "issue-card";
+
+      const header = document.createElement("div");
+      header.className = "issue-header";
+
+      const title = document.createElement("div");
+      title.className = "issue-title";
+      title.textContent = `${index + 1}. ${issue.title || "Untitled Issue"}`;
+
+      header.appendChild(title);
+      card.appendChild(header);
+
+      const tagRow = document.createElement("div");
+      tagRow.className = "tag-row";
+
+      const typeTag = document.createElement("span");
+      typeTag.className = "tag";
+      typeTag.textContent = "Type: " + (issue.type || "unknown");
+
+      const statusTag = document.createElement("span");
+      statusTag.className = "tag";
+      statusTag.textContent = "Status: " + (issue.status || "unknown");
+
+      tagRow.appendChild(typeTag);
+      tagRow.appendChild(statusTag);
+      card.appendChild(tagRow);
+
+      addField(card, "Trigger", issue.trigger);
+      addField(card, "Summary", issue.summary);
+      addField(card, "Final Understanding", issue.final_understanding);
+      addField(card, "Review Note", issue.review_note);
+
+      return card;
+    }
+
+    function addField(parent, label, value) {
+      const field = document.createElement("div");
+      field.className = "field";
+
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "field-label";
+      labelSpan.textContent = label + ": ";
+
+      const valueSpan = document.createElement("span");
+      valueSpan.textContent = value || "Not available yet";
+
+      field.appendChild(labelSpan);
+      field.appendChild(valueSpan);
+      parent.appendChild(field);
+    }
+  </script>
+</body>
+</html>
