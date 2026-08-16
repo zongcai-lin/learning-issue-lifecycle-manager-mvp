@@ -159,6 +159,11 @@
             });
     
             const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || `Backend returned status ${response.status}`);
+            }
+
             renderResult(data);
     
         } catch (error) {
@@ -201,13 +206,8 @@
         title.textContent = `${thread.goal_id || "G" + (index + 1)}: ${thread.main_goal}`;
         card.appendChild(title);
     
-        const status = document.createElement("p");
-        status.innerHTML = `<strong>Status:</strong> ${thread.status || "unknown"}`;
-        card.appendChild(status);
-    
-        const summary = document.createElement("p");
-        summary.innerHTML = `<strong>Summary:</strong> ${thread.summary || ""}`;
-        card.appendChild(summary);
+        addField(card, "Status", thread.status || "unknown");
+        addField(card, "Summary", thread.summary);
     
         const issueHeading = document.createElement("h4");
         issueHeading.textContent = "Issues";
@@ -247,7 +247,12 @@
     
     function addField(parent, label, value) {
         const p = document.createElement("p");
-        p.innerHTML = `<strong>${label}:</strong> ${value || ""}`;
+
+        const labelElement = document.createElement("strong");
+        labelElement.textContent = `${label}:`;
+        p.appendChild(labelElement);
+        p.appendChild(document.createTextNode(` ${value || ""}`));
+
         parent.appendChild(p);
     }
     </script>
