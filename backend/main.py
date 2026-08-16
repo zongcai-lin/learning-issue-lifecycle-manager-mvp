@@ -1,23 +1,24 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from analyzer import analyze_learning_conversation
+from backend.analyzer import analyze_learning_conversation
+from backend.schemas import AnalysisResult, AnalyzeRequest
 
 
-app = FastAPI()
+app = FastAPI(title="Learning Issue Lifecycle Manager MVP")
 
-# 解决跨域问题（5000端口访问8000端口）
+# Local-development CORS configuration. Restrict this list before deployment.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "http://127.0.0.1:5000",
+        "http://localhost:5000",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
-
-
-class AnalyzeRequest(BaseModel):
-    conversation_text: str
 
 
 @app.get("/")
@@ -25,7 +26,12 @@ def root():
     return {"message": "Learning Issue MVP backend is running"}
 
 
-@app.post("/analyze")
-def analyze_conversation(request: AnalyzeRequest):
-    result = analyze_learning_conversation(request.conversation_text)
-    return result
+@app.post("/analyze", response_model=AnalysisResult)
+def analyze_conversation(request: AnalyzeRequest) -> AnalysisResult:
+    try:
+        return analyze_learning_conversation(request.conversation_text)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="The analyzer returned an invalid structured response",
+        ) from exc

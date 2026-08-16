@@ -91,6 +91,29 @@
       color: darkred;
       white-space: pre-wrap;
     }
+    .goal-thread-card {
+    border: 2px solid #333;
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 20px;
+    background-color: #f7f7f7;
+}
+
+    .issue-card {
+        border: 1px solid #aaa;
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 12px;
+        background-color: #ffffff;
+    }
+
+    .goal-thread-card h3 {
+        margin-top: 0;
+    }
+
+    .issue-card h4 {
+        margin-top: 0;
+    }
   </style>
 </head>
 
@@ -114,135 +137,124 @@
 
   <script>
     async function analyze() {
-      const resultBox = document.getElementById("result");
-      const text = document.getElementById("conversation").value.trim();
-
-      if (!text) {
-        resultBox.innerHTML = "<p class='error'>Please paste a conversation first.</p>";
-        return;
-      }
-
-      resultBox.innerHTML = "<p>Analyzing...</p>";
-
-      try {
-        const response = await fetch("http://127.0.0.1:8000/analyze", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            conversation_text: text
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error("Backend returned status: " + response.status);
+        const text = document.getElementById("conversation").value.trim();
+        const resultBox = document.getElementById("result");
+    
+        if (!text) {
+            resultBox.innerHTML = "<p>Please paste a conversation first.</p>";
+            return;
         }
+    
+        resultBox.innerHTML = "<p>Analyzing...</p>";
+    
+        try {
+            const response = await fetch("http://127.0.0.1:8000/analyze", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    conversation_text: text
+                })
+            });
+    
+            const data = await response.json();
 
-        const data = await response.json();
-        renderResult(data);
+            if (!response.ok) {
+                throw new Error(data.detail || `Backend returned status ${response.status}`);
+            }
 
-      } catch (error) {
-        resultBox.innerHTML = "";
-        const errorBox = document.createElement("pre");
-        errorBox.className = "error";
-        errorBox.textContent = "Error: " + error.message;
-        resultBox.appendChild(errorBox);
-        console.error(error);
-      }
+            renderResult(data);
+    
+        } catch (error) {
+            resultBox.innerHTML = "";
+    
+            const errorBox = document.createElement("pre");
+            errorBox.textContent = "Error: " + error.message;
+            resultBox.appendChild(errorBox);
+    
+            console.error(error);
+        }
     }
-
+    
     function renderResult(data) {
-      const resultBox = document.getElementById("result");
-      resultBox.innerHTML = "";
-
-      renderMainGoal(resultBox, data.main_goal);
-
-      if (!data.issues || !Array.isArray(data.issues) || data.issues.length === 0) {
-        const emptyMessage = document.createElement("p");
-        emptyMessage.className = "empty";
-        emptyMessage.textContent = "No issues found.";
-        resultBox.appendChild(emptyMessage);
-        return;
-      }
-
-      const issuesTitle = document.createElement("h2");
-      issuesTitle.textContent = "Issues";
-      resultBox.appendChild(issuesTitle);
-
-      data.issues.forEach((issue, index) => {
-        const issueCard = createIssueCard(issue, index);
-        resultBox.appendChild(issueCard);
-      });
+        const resultBox = document.getElementById("result");
+        resultBox.innerHTML = "";
+    
+        if (!data.goal_threads || !Array.isArray(data.goal_threads)) {
+            const errorBox = document.createElement("pre");
+            errorBox.textContent = "Unexpected response format:\n" + JSON.stringify(data, null, 2);
+            resultBox.appendChild(errorBox);
+            return;
+        }
+    
+        const heading = document.createElement("h2");
+        heading.textContent = "Goal Threads";
+        resultBox.appendChild(heading);
+    
+        data.goal_threads.forEach((thread, index) => {
+            const threadCard = createGoalThreadCard(thread, index);
+            resultBox.appendChild(threadCard);
+        });
     }
-
-    function renderMainGoal(parent, mainGoal) {
-      const title = document.createElement("h2");
-      title.textContent = "Main Goal";
-      parent.appendChild(title);
-
-      const card = document.createElement("div");
-      card.className = "main-goal-card";
-
-      const text = document.createElement("p");
-      text.textContent = mainGoal || "No main goal detected.";
-
-      card.appendChild(text);
-      parent.appendChild(card);
+    
+    function createGoalThreadCard(thread, index) {
+        const card = document.createElement("div");
+        card.className = "goal-thread-card";
+    
+        const title = document.createElement("h3");
+        title.textContent = `${thread.goal_id || "G" + (index + 1)}: ${thread.main_goal}`;
+        card.appendChild(title);
+    
+        addField(card, "Status", thread.status || "unknown");
+        addField(card, "Summary", thread.summary);
+    
+        const issueHeading = document.createElement("h4");
+        issueHeading.textContent = "Issues";
+        card.appendChild(issueHeading);
+    
+        if (thread.issues && Array.isArray(thread.issues) && thread.issues.length > 0) {
+            thread.issues.forEach(issue => {
+                const issueCard = createIssueCard(issue);
+                card.appendChild(issueCard);
+            });
+        } else {
+            const emptyText = document.createElement("p");
+            emptyText.textContent = "No issues found for this goal thread.";
+            card.appendChild(emptyText);
+        }
+    
+        return card;
     }
-
-    function createIssueCard(issue, index) {
-      const card = document.createElement("div");
-      card.className = "issue-card";
-
-      const header = document.createElement("div");
-      header.className = "issue-header";
-
-      const title = document.createElement("div");
-      title.className = "issue-title";
-      title.textContent = `${index + 1}. ${issue.title || "Untitled Issue"}`;
-
-      header.appendChild(title);
-      card.appendChild(header);
-
-      const tagRow = document.createElement("div");
-      tagRow.className = "tag-row";
-
-      const typeTag = document.createElement("span");
-      typeTag.className = "tag";
-      typeTag.textContent = "Type: " + (issue.type || "unknown");
-
-      const statusTag = document.createElement("span");
-      statusTag.className = "tag";
-      statusTag.textContent = "Status: " + (issue.status || "unknown");
-
-      tagRow.appendChild(typeTag);
-      tagRow.appendChild(statusTag);
-      card.appendChild(tagRow);
-
-      addField(card, "Trigger", issue.trigger);
-      addField(card, "Summary", issue.summary);
-      addField(card, "Final Understanding", issue.final_understanding);
-      addField(card, "Review Note", issue.review_note);
-
-      return card;
+    
+    function createIssueCard(issue) {
+        const card = document.createElement("div");
+        card.className = "issue-card";
+    
+        const title = document.createElement("h4");
+        title.textContent = issue.title || "Untitled issue";
+        card.appendChild(title);
+    
+        addField(card, "Type", issue.type);
+        addField(card, "Status", issue.status);
+        addField(card, "Trigger", issue.trigger);
+        addField(card, "Summary", issue.summary);
+        addField(card, "Final Understanding", issue.final_understanding);
+        addField(card, "Review Note", issue.review_note);
+    
+        return card;
     }
-
+    
     function addField(parent, label, value) {
-      const field = document.createElement("div");
-      field.className = "field";
+        const p = document.createElement("p");
 
-      const labelSpan = document.createElement("span");
-      labelSpan.className = "field-label";
-      labelSpan.textContent = label + ": ";
+        const labelElement = document.createElement("strong");
+        labelElement.textContent = `${label}:`;
+        p.appendChild(labelElement);
+        p.appendChild(document.createTextNode(` ${value || ""}`));
 
-      const valueSpan = document.createElement("span");
-      valueSpan.textContent = value || "Not available yet";
-
-      field.appendChild(labelSpan);
-      field.appendChild(valueSpan);
-      parent.appendChild(field);
+        parent.appendChild(p);
     }
-  </script>
+    </script>
 </body>
 </html>
