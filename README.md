@@ -5,14 +5,17 @@ LILM is an early-stage prototype that turns an AI learning conversation into str
 ## Current capabilities
 
 - Accepts a pasted learning conversation through a FastAPI endpoint.
-- Uses an OpenAI model with a Pydantic schema to return structured goal and issue data.
+- Uses a staged OpenAI analysis pipeline with Pydantic structured outputs: Stage 1
+  detects Goal Threads, then Stage 2 extracts Issues independently for each goal.
 - Represents multiple learning goals, issue lifecycle states, evidence, and next actions.
 - Renders goal summaries and issue cards in a lightweight browser interface.
 - Includes a deterministic conversation parser and unit tests for common transcript formats.
 
 ## Status and limitations
 
-This repository is an MVP, not a production service. The conversation parser exists and is tested, but the staged parser is not yet wired into the model-analysis pipeline. There is currently no authentication, persistence, rate limiting, or production deployment configuration.
+This repository is an MVP, not a production service. The staged parser and analyzer
+are wired into `/analyze`, but there is currently no authentication, persistence,
+rate limiting, or production deployment configuration.
 
 The text submitted to `/analyze` is sent to the configured OpenAI API. Do not submit confidential, personal, or regulated information. No real user conversations or API credentials are committed to this repository.
 
