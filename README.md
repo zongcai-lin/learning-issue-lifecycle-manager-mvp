@@ -2,6 +2,23 @@
 
 LILM is an early-stage prototype that turns an AI learning conversation into structured goal threads and issue states. It is intended to help learners see what they tried, where they became blocked, and what remains unresolved instead of losing that context inside a long chat transcript.
 
+> **Work in progress:** this repository is being shared as an interim portfolio
+> checkpoint. The core multi-goal analysis pipeline is implemented and tested,
+> while runtime hardening, public regression fixtures, and the final MVP
+> readiness review are still planned work.
+
+## What you can review today
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Conversation parsing | Implemented | Deterministic parsing for common pasted transcript formats. |
+| Goal detection | Implemented | Stage 1 identifies multiple learning goals and assigns turns to each goal. |
+| Per-goal issue extraction | Implemented | Stage 2 independently extracts issues, lifecycle states, evidence, and next actions for each goal. |
+| API and browser UI | Prototype | FastAPI endpoint and lightweight frontend are wired for local use. |
+| Runtime and API error handling | Planned (LILM-5) | Lazy client initialization, user-facing failure handling, and browser-path verification remain outstanding. |
+| Public regression fixtures | Planned (LILM-6) | Current tests use synthetic data; a curated public fixture set is still outstanding. |
+| Final Step 6.2 readiness audit | Planned (LILM-7) | This checkpoint is not the final MVP release. |
+
 ## Current capabilities
 
 - Accepts a pasted learning conversation through a FastAPI endpoint.
@@ -13,9 +30,10 @@ LILM is an early-stage prototype that turns an AI learning conversation into str
 
 ## Status and limitations
 
-This repository is an MVP, not a production service. The staged parser and analyzer
-are wired into `/analyze`, but there is currently no authentication, persistence,
-rate limiting, or production deployment configuration.
+This repository contains an in-progress MVP, not a production service. The staged
+parser and analyzer are wired into `/analyze`, but runtime/API failures have not yet
+received the planned LILM-5 hardening. There is currently no authentication,
+persistence, rate limiting, or production deployment configuration.
 
 The text submitted to `/analyze` is sent to the configured OpenAI API. Do not submit confidential, personal, or regulated information. No real user conversations or API credentials are committed to this repository.
 
