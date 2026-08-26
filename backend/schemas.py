@@ -69,12 +69,23 @@ class Issue(BaseModel):
     review_note: str = Field(description="A concise note for later review")
 
 
+class GoalIssueExtraction(BaseModel):
+    """Stage 2 output for one Goal Thread.
+
+    Goal identity and scope stay authoritative in the Stage 1 candidate; Stage 2
+    only determines lifecycle status and the Issues found inside that scope.
+    """
+
+    status: GoalStatus
+    issues: list[Issue] = Field(min_length=1)
+
+
 class GoalThread(BaseModel):
     goal_id: str = Field(description="Stable identifier within this response, such as G1")
     main_goal: str
     status: GoalStatus
     summary: str
-    issues: list[Issue]
+    issues: list[Issue] = Field(min_length=1)
 
 
 class AnalysisResult(BaseModel):

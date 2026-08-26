@@ -5,10 +5,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from backend.conversation import parse_conversation_turns
 from backend.schemas import (
     AnalysisResult,
     ConversationTurn,
     GoalDetectionResult,
+    GoalIssueExtraction,
+    GoalThread,
+    GoalThreadCandidate,
 )
 
 
@@ -124,25 +128,40 @@ Ordered conversation turns:
     return result
 
 
-def analyze_learning_conversation(conversation_text: str) -> AnalysisResult:
-    # The Pydantic model is the source of truth for the final output contract.
-    response_schema = json.dumps(
-        AnalysisResult.model_json_schema(), ensure_ascii=False, indent=2
+def extract_issues_for_goal(
+    turns: list[ConversationTurn],
+    goal: GoalThreadCandidate,
+) -> GoalThread:
+    """Extract Stage 2 Issues from only the turns assigned to one goal."""
+
+    turns_by_id = {turn.turn_id: turn for turn in turns}
+    unknown_turn_ids = [
+        turn_id for turn_id in goal.turn_ids if turn_id not in turns_by_id
+    ]
+    if unknown_turn_ids:
+        raise ValueError(
+            f"{goal.goal_id} references unknown turns: {', '.join(unknown_turn_ids)}"
+        )
+
+    goal_turn_ids = set(goal.turn_ids)
+    goal_turns = [turn for turn in turns if turn.turn_id in goal_turn_ids]
+    if not goal_turns:
+        raise ValueError(f"{goal.goal_id} has no conversation turns")
+
+    serialized_goal = json.dumps(goal.model_dump(), ensure_ascii=False, indent=2)
+    serialized_turns = json.dumps(
+        [turn.model_dump() for turn in goal_turns],
+        ensure_ascii=False,
+        indent=2,
     )
-
     prompt = f"""
-You are analyzing an AI-assisted learning conversation.
-
-Your task is to reconstruct the learner's evolving learning structure as one or
-more Goal Threads. Each Goal Thread represents a distinct goal pursued in the
-conversation and contains the issues that arose while pursuing that goal.
-
-Return ONLY valid JSON that conforms to this JSON Schema:
-{response_schema}
+Extract the learning Issues for exactly one already-detected Goal Thread.
+This is Stage 2. Do not create, merge, rename, or re-scope Goal Threads. Determine
+the Goal Thread status and extract its Issues only from the supplied goal turns.
 
 Issue type definitions:
 - blocker: an issue that must be addressed before its Goal Thread can continue
-- sub_issue: a prerequisite, diagnostic step, or smaller question within a Goal Thread
+- sub_issue: a prerequisite, diagnostic step, validation step, or smaller question within a Goal Thread
 - curiosity_branch: a side question the learner actually explored but that does not block the Goal Thread
 - related_concept: a potentially useful concept mentioned in the conversation that the learner did not explore
 
@@ -158,66 +177,84 @@ Goal status definitions:
 - parked: the learner explicitly deferred the goal
 
 Analysis rules:
-- A conversation can contain one or multiple Goal Threads.
-- Use task-or-milestone-level granularity, not project-level granularity.
-- A Goal Thread represents a concrete outcome with its own independent completion criterion.
-- Separate independently completable goals even when they are closely related or belong to the same project.
-- Merge activities only when they share the same concrete outcome and completion criterion.
-- Start a new Goal Thread when the previous outcome has been completed or confirmed and the learner begins pursuing a new deliverable or outcome.
-- Also start a new Goal Thread when the new outcome can be completed and tested independently, or when the success criterion changes substantially.
-- Do not start a new Goal Thread merely because the learner asks a diagnostic, conceptual, or implementation question needed to complete the current goal. Record it as an issue under the current Goal Thread.
-- Navigation language such as "continue" or "what next" does not create a Goal Thread by itself. If it is followed by work on a new concrete outcome, create the new Goal Thread when that work begins.
-- Before generating the JSON, identify every point where the learner moves from one independently testable outcome to another.
-- Use sequential goal IDs: G1, G2, G3, and so on.
-- Assign every issue to the Goal Thread that explains why it arose.
+- Return status and at least one Issue. Every Issue must contain exactly:
+  title, type, status, trigger, summary, final_understanding, and review_note.
+- Use only the supplied turns. They are the complete evidence boundary for this
+  Goal Thread; do not import Issues or evidence from another Goal Thread.
 - Do not create a main_issue. The Goal Thread's main_goal already represents the main line.
 - Do not use parking_lot as an issue type. Represent deferred work with status parked.
-- Use suggested primarily with related_concept. If the learner actually explored a concept, classify it as blocker, sub_issue, or curiosity_branch instead.
-- An assistant answer alone does not prove resolved status. Look for learner confirmation, successful observable progress, or clear evidence in the conversation.
-- Do not create issues from navigation messages such as "continue" or "what next" unless they include a substantive question.
-- Keep distinct user questions separate when they require different explanations.
-- Preserve returns to an earlier goal by assigning later related issues back to that Goal Thread.
+- If the user explicitly asked about or explored a concept such as const, fetch,
+  JSON, CORS, or async/await, it is not an unchosen system recommendation. Never
+  classify such an Issue as related_concept with suggested status; use blocker,
+  sub_issue, or curiosity_branch according to its role.
+- Use related_concept with suggested only when the system introduced a potentially
+  useful concept that the learner did not ask about or explore.
+- resolved requires positive evidence: explicit user confirmation, observed
+  successful execution, a passing result, or another observable completion signal.
+  An assistant explanation, proposed fix, or instruction alone is not evidence of
+  resolution. When the evidence is ambiguous, keep the Issue or Goal open.
+- Do not create an Issue from pure navigation such as "continue", "what next",
+  "下一步是什么", or "继续". A navigation turn with a separate substantive
+  question may contribute only that substantive question.
+- Taxonomy precedence is mandatory: every diagnostic or validation activity is a
+  sub_issue, even when it temporarily blocks progress. Testing an endpoint,
+  running code to check whether it works, reproducing an error, inspecting output,
+  and verifying a fix are diagnostic/validation activities. Never label one of
+  these activities blocker. Reserve blocker for the underlying problem that stops
+  the Goal, such as the CORS failure itself.
+- Keep distinct substantive user questions separate when they require different explanations.
 - Prefer concise, evidence-based summaries. Do not invent learner understanding that is not present.
+- If no final understanding is demonstrated, return an empty string for final_understanding.
 
-Goal boundary example:
+Goal Thread candidate:
+{serialized_goal}
 
-Conversation progression:
-1. The learner tests POST /analyze in FastAPI /docs.
-2. The learner fixes CORS and confirms that the frontend receives backend data.
-3. The learner then starts converting the returned raw JSON into readable issue cards.
-4. The learner confirms that the issue-list page works.
-
-Correct structure:
-- G1: Make the frontend Analyze button successfully request POST /analyze.
-  Completion criterion: the frontend successfully receives the backend response.
-  Issues: testing /analyze, understanding CORS, and fixing the cross-origin request.
-- G2: Render the returned JSON as a readable Issue List page.
-  Completion criterion: the page displays the goal and issue fields as readable cards.
-  Issues: understanding response.json(), DOM rendering, and relevant JavaScript concepts.
-
-These are separate Goal Threads even though they belong to the same MVP project.
-
-Conversation:
-{conversation_text}
+Turns assigned to this Goal Thread:
+{serialized_turns}
 """
 
-    response = client.chat.completions.create(
+    completion = client.chat.completions.parse(
         model="gpt-4o-mini",
         messages=[
             {
                 "role": "system",
                 "content": (
-                    "You are a strict learning issue lifecycle analyzer. "
-                    "Return only JSON matching the supplied schema."
+                    "You perform Stage 2 issue extraction for one fixed Goal "
+                    "Thread and return only the requested structured result."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
-        response_format={"type": "json_object"},
+        response_format=GoalIssueExtraction,
+        temperature=0,
+        store=False,
     )
 
-    content = response.choices[0].message.content
-    if not content:
-        raise ValueError("The analyzer returned an empty response")
+    message = completion.choices[0].message
+    extraction = message.parsed
+    if extraction is None:
+        if message.refusal:
+            raise ValueError(f"Issue extraction was refused: {message.refusal}")
+        raise ValueError(
+            f"Issue extraction returned no parsed result for {goal.goal_id}"
+        )
 
-    return AnalysisResult.model_validate_json(content)
+    return GoalThread(
+        goal_id=goal.goal_id,
+        main_goal=goal.main_goal,
+        status=extraction.status,
+        summary=goal.summary,
+        issues=extraction.issues,
+    )
+
+
+def analyze_learning_conversation(conversation_text: str) -> AnalysisResult:
+    """Run the parser, Stage 1 detection, and per-goal Stage 2 extraction."""
+
+    turns = parse_conversation_turns(conversation_text)
+    detected_goals = detect_goal_threads(turns)
+    goal_threads = [
+        extract_issues_for_goal(turns, goal) for goal in detected_goals.goal_threads
+    ]
+
+    return AnalysisResult(goal_threads=goal_threads)
