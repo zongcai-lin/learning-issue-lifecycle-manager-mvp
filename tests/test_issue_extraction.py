@@ -47,8 +47,9 @@ class ExtractIssuesForGoalTests(unittest.TestCase):
             ConversationTurn(turn_id="T5", role="assistant", content="const creates a binding."),
         ]
 
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_uses_only_turns_assigned_to_the_goal(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_uses_only_turns_assigned_to_the_goal(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         goal = GoalThreadCandidate(
             goal_id="G2",
             main_goal="Understand the JavaScript rendering code",
@@ -69,8 +70,9 @@ class ExtractIssuesForGoalTests(unittest.TestCase):
         self.assertEqual([turn["turn_id"] for turn in supplied_turns], ["T4", "T5"])
         self.assertNotIn("CORS", json.dumps(supplied_turns))
 
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_uses_structured_output_and_encodes_product_rules(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_uses_structured_output_and_encodes_product_rules(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         goal = GoalThreadCandidate(
             goal_id="G1",
             main_goal="Connect the frontend to the API",
@@ -107,8 +109,9 @@ class ExtractIssuesForGoalTests(unittest.TestCase):
 
 
 class StagedAnalysisTests(unittest.TestCase):
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_combines_independent_extractions_into_analysis_result(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_combines_independent_extractions_into_analysis_result(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         goals = GoalDetectionResult(
             goal_threads=[
                 GoalThreadCandidate(
@@ -155,6 +158,7 @@ Assistant: const creates a binding.
             response_formats,
             [GoalDetectionResult, GoalIssueExtraction, GoalIssueExtraction],
         )
+        get_client.assert_called_once_with()
 
 
 class PublicAnalyzeContractTests(unittest.TestCase):

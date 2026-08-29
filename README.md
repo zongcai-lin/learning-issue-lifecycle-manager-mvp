@@ -15,7 +15,7 @@ LILM is an early-stage prototype that turns an AI learning conversation into str
 | Goal detection | Implemented | Stage 1 identifies multiple learning goals and assigns turns to each goal. |
 | Per-goal issue extraction | Implemented | Stage 2 independently extracts issues, lifecycle states, evidence, and next actions for each goal. |
 | API and browser UI | Prototype | FastAPI endpoint and lightweight frontend are wired for local use. |
-| Runtime and API error handling | Planned (LILM-5) | Lazy client initialization, user-facing failure handling, and browser-path verification remain outstanding. |
+| Runtime and API error handling | Implemented | The OpenAI client is created on demand; input, configuration, structured-output, and upstream API failures return explicit HTTP errors. |
 | Public regression fixtures | Planned (LILM-6) | Current tests use synthetic data; a curated public fixture set is still outstanding. |
 | Final Step 6.2 readiness audit | Planned (LILM-7) | This checkpoint is not the final MVP release. |
 
@@ -31,8 +31,8 @@ LILM is an early-stage prototype that turns an AI learning conversation into str
 ## Status and limitations
 
 This repository contains an in-progress MVP, not a production service. The staged
-parser and analyzer are wired into `/analyze`, but runtime/API failures have not yet
-received the planned LILM-5 hardening. There is currently no authentication,
+parser and analyzer are wired into `/analyze`, with lazy client initialization and
+user-facing runtime/API failure handling. There is currently no authentication,
 persistence, rate limiting, or production deployment configuration.
 
 The text submitted to `/analyze` is sent to the configured OpenAI API. Do not submit confidential, personal, or regulated information. No real user conversations or API credentials are committed to this repository.
@@ -62,7 +62,7 @@ The text submitted to `/analyze` is sent to the configured OpenAI API. Do not su
 3. Start the API:
 
    ```bash
-   uvicorn backend.main:app --reload
+   python3 -m uvicorn backend.main:app --reload
    ```
 
 4. In another terminal, serve the frontend:
