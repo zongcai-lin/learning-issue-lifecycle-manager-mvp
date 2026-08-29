@@ -21,14 +21,46 @@ DOTENV_PATH = PROJECT_ROOT / ".env"
 
 load_dotenv(DOTENV_PATH)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+class AnalyzerConfigurationError(RuntimeError):
+    """The analyzer cannot run because required local configuration is missing."""
 
 
-def detect_goal_threads(turns: list[ConversationTurn]) -> GoalDetectionResult:
+class InvalidConversationError(ValueError):
+    """The submitted text is not a supported learning-conversation transcript."""
+
+
+class AnalyzerResponseError(ValueError):
+    """The model response violates the analyzer's structured-output contract."""
+
+
+class NoGoalThreadsError(AnalyzerResponseError):
+    """The model found no substantive Goal Thread in the submitted transcript."""
+
+
+def get_openai_client() -> OpenAI:
+    """Create the API client only when an analysis actually needs it."""
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise AnalyzerConfigurationError(
+            "OPENAI_API_KEY is not configured. Copy .env.example to .env and "
+            "add an API key before running an analysis."
+        )
+
+    return OpenAI(api_key=api_key)
+
+
+def detect_goal_threads(
+    turns: list[ConversationTurn],
+    openai_client: OpenAI | None = None,
+) -> GoalDetectionResult:
     """Detect goal-level threads without extracting their learning issues."""
 
     if not turns:
-        raise ValueError("At least one conversation turn is required")
+        raise InvalidConversationError("At least one conversation turn is required")
+
+    client = openai_client or get_openai_client()
 
     serialized_turns = json.dumps(
         [turn.model_dump() for turn in turns],
@@ -102,25 +134,34 @@ Ordered conversation turns:
     result = message.parsed
     if result is None:
         if message.refusal:
-            raise ValueError(f"Goal detection was refused: {message.refusal}")
-        raise ValueError("Goal detection returned no parsed result")
+            raise AnalyzerResponseError(
+                f"Goal detection was refused: {message.refusal}"
+            )
+        raise AnalyzerResponseError("Goal detection returned no parsed result")
+
+    if not result.goal_threads:
+        raise NoGoalThreadsError(
+            "No substantive Goal Thread was found in the conversation"
+        )
 
     known_turn_ids = {turn.turn_id for turn in turns}
     expected_goal_ids = [f"G{index}" for index in range(1, len(result.goal_threads) + 1)]
     actual_goal_ids = [goal.goal_id for goal in result.goal_threads]
     if actual_goal_ids != expected_goal_ids:
-        raise ValueError(
+        raise AnalyzerResponseError(
             "Goal IDs must be sequential from G1; "
             f"received {', '.join(actual_goal_ids)}"
         )
 
     for goal in result.goal_threads:
         if len(goal.turn_ids) != len(set(goal.turn_ids)):
-            raise ValueError(f"{goal.goal_id} contains duplicate turn references")
+            raise AnalyzerResponseError(
+                f"{goal.goal_id} contains duplicate turn references"
+            )
 
         unknown_turn_ids = sorted(set(goal.turn_ids) - known_turn_ids)
         if unknown_turn_ids:
-            raise ValueError(
+            raise AnalyzerResponseError(
                 f"{goal.goal_id} references unknown turns: "
                 f"{', '.join(unknown_turn_ids)}"
             )
@@ -131,6 +172,7 @@ Ordered conversation turns:
 def extract_issues_for_goal(
     turns: list[ConversationTurn],
     goal: GoalThreadCandidate,
+    openai_client: OpenAI | None = None,
 ) -> GoalThread:
     """Extract Stage 2 Issues from only the turns assigned to one goal."""
 
@@ -139,14 +181,16 @@ def extract_issues_for_goal(
         turn_id for turn_id in goal.turn_ids if turn_id not in turns_by_id
     ]
     if unknown_turn_ids:
-        raise ValueError(
+        raise AnalyzerResponseError(
             f"{goal.goal_id} references unknown turns: {', '.join(unknown_turn_ids)}"
         )
 
     goal_turn_ids = set(goal.turn_ids)
     goal_turns = [turn for turn in turns if turn.turn_id in goal_turn_ids]
     if not goal_turns:
-        raise ValueError(f"{goal.goal_id} has no conversation turns")
+        raise AnalyzerResponseError(f"{goal.goal_id} has no conversation turns")
+
+    client = openai_client or get_openai_client()
 
     serialized_goal = json.dumps(goal.model_dump(), ensure_ascii=False, indent=2)
     serialized_turns = json.dumps(
@@ -234,8 +278,10 @@ Turns assigned to this Goal Thread:
     extraction = message.parsed
     if extraction is None:
         if message.refusal:
-            raise ValueError(f"Issue extraction was refused: {message.refusal}")
-        raise ValueError(
+            raise AnalyzerResponseError(
+                f"Issue extraction was refused: {message.refusal}"
+            )
+        raise AnalyzerResponseError(
             f"Issue extraction returned no parsed result for {goal.goal_id}"
         )
 
@@ -251,10 +297,16 @@ Turns assigned to this Goal Thread:
 def analyze_learning_conversation(conversation_text: str) -> AnalysisResult:
     """Run the parser, Stage 1 detection, and per-goal Stage 2 extraction."""
 
-    turns = parse_conversation_turns(conversation_text)
-    detected_goals = detect_goal_threads(turns)
+    try:
+        turns = parse_conversation_turns(conversation_text)
+    except ValueError as exc:
+        raise InvalidConversationError(str(exc)) from exc
+
+    client = get_openai_client()
+    detected_goals = detect_goal_threads(turns, openai_client=client)
     goal_threads = [
-        extract_issues_for_goal(turns, goal) for goal in detected_goals.goal_threads
+        extract_issues_for_goal(turns, goal, openai_client=client)
+        for goal in detected_goals.goal_threads
     ]
 
     return AnalysisResult(goal_threads=goal_threads)

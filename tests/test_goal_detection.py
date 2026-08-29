@@ -26,8 +26,9 @@ class DetectGoalThreadsTests(unittest.TestCase):
 
         self.assertEqual(DOTENV_PATH, repository_root / ".env")
 
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_uses_pydantic_structured_output_and_preserves_turn_data(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_uses_pydantic_structured_output_and_preserves_turn_data(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         expected = GoalDetectionResult(
             goal_threads=[
                 GoalThreadCandidate(
@@ -55,8 +56,9 @@ class DetectGoalThreadsTests(unittest.TestCase):
         self.assertEqual(supplied_turns[0]["role"], "user")
         self.assertEqual(supplied_turns[2]["content"], "The request works now.")
 
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_allows_a_turn_to_support_multiple_goals(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_allows_a_turn_to_support_multiple_goals(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         expected = GoalDetectionResult(
             goal_threads=[
                 GoalThreadCandidate(
@@ -80,8 +82,9 @@ class DetectGoalThreadsTests(unittest.TestCase):
         self.assertIn("T2", result.goal_threads[0].turn_ids)
         self.assertIn("T2", result.goal_threads[1].turn_ids)
 
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_rejects_unknown_turn_references(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_rejects_unknown_turn_references(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         parse.return_value = completion_with(
             GoalDetectionResult(
                 goal_threads=[
@@ -98,8 +101,9 @@ class DetectGoalThreadsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "G1 references unknown turns: T99"):
             detect_goal_threads(self.turns)
 
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_rejects_non_sequential_goal_ids(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_rejects_non_sequential_goal_ids(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         parse.return_value = completion_with(
             GoalDetectionResult(
                 goal_threads=[
@@ -116,8 +120,9 @@ class DetectGoalThreadsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sequential from G1"):
             detect_goal_threads(self.turns)
 
-    @patch("backend.analyzer.client.chat.completions.parse")
-    def test_rejects_duplicate_turn_references_within_one_goal(self, parse) -> None:
+    @patch("backend.analyzer.get_openai_client")
+    def test_rejects_duplicate_turn_references_within_one_goal(self, get_client) -> None:
+        parse = get_client.return_value.chat.completions.parse
         parse.return_value = completion_with(
             GoalDetectionResult(
                 goal_threads=[

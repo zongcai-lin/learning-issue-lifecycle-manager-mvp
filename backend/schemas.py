@@ -54,7 +54,9 @@ class GoalThreadCandidate(BaseModel):
 
 
 class GoalDetectionResult(BaseModel):
-    goal_threads: list[GoalThreadCandidate] = Field(min_length=1)
+    # An empty detection is structurally valid model output. The analyzer turns it
+    # into a domain-specific NoGoalThreadsError before building the public result.
+    goal_threads: list[GoalThreadCandidate]
 
 
 class Issue(BaseModel):
